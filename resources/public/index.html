@@ -1,79 +1,123 @@
-<div id="game-container"></div>
-<div id="status"></div>
-<button id="start-btn" onclick="startGame()" style="display:none;"></button>
+<div id="app">
+  <div id="game-wrap">
+    <div id="game-container"></div>
+
+    <div id="hud">
+      <div id="status"></div>
+      <button id="start-btn" onclick="startGame()" style="display:none;"></button>
+    </div>
+  </div>
+</div>
 
 <style>
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+
+  /* Центрируем вообще всё */
+  #app {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    box-sizing: border-box;
+  }
+
+  /* Центрируем содержимое: поле + hud */
+  #game-wrap {
+    display: grid;
+    gap: 16px;
+    justify-items: center; /* <-- ВОТ ЭТО было нужно */
+  }
+
+  /* поле */
   #game-container {
     display: grid;
-    grid-template-columns: repeat(var(--width), 20px);
-    grid-template-rows: repeat(var(--height), 20px);
-    gap: 1px;
+    gap: 2px;
+
+    --cell: min(6.5vh, 5.5vw);
+    grid-template-columns: repeat(var(--width), var(--cell));
+    grid-template-rows: repeat(var(--height), var(--cell));
+
+    padding: 10px;
+    border: 2px solid #222;
+    border-radius: 12px;
+    background: #fafafa;
   }
-  .cell { width: 20px; height: 20px; border: 1px solid #ccc; }
+
+  .cell {
+    width: var(--cell);
+    height: var(--cell);
+    border: 1px solid #bbb;
+    box-sizing: border-box;
+  }
   .wall { background: #333; }
   .empty { background: #fff; }
   .player { background: var(--color); border-radius: 50%; }
   .bot { background: #000; }
   .exit { background: gold; }
+
+  /* hud ровно по центру под полем */
+  #hud {
+    width: 100%;
+    display: grid;
+    gap: 10px;
+    justify-items: center; /* <-- и это */
+    text-align: center;
+    font: 20px/1.2 system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+  }
+
+  #status {
+    font-size: 26px;
+    font-weight: 800;
+  }
+
+  #start-btn {
+    padding: 10px 18px;
+    font-size: 18px;
+    border-radius: 10px;
+    border: 2px solid #222;
+    background: white;
+    cursor: pointer;
+  }
 </style>
+
 <script>
   const ws = new WebSocket(`ws://${location.host}/ws`);
 
   let lastState = null;
 
-function normalizeStatus(s) {
-  // сервер может прислать "playing" или ":playing" и т.п.
-  if (typeof s !== "string") return "";
-  return s.startsWith(":") ? s.slice(1) : s;
-}
-
-function startGame() {
-  if (!lastState) return;
-
-  const gs = normalizeStatus(lastState["game-status"]);
-  if (gs === "waiting") {
-    ws.send(JSON.stringify({ type: "start" }));
-  } else if (gs === "won" || gs === "lost") {
-    ws.send(JSON.stringify({ type: "restart" }));
+  function normalizeStatus(s) {
+    if (typeof s !== "string") return "";
+    return s.startsWith(":") ? s.slice(1) : s;
   }
-}
+
+  function startGame() {
+    if (!lastState) return;
+
+    const gs = normalizeStatus(lastState["game-status"]);
+    if (gs === "waiting") {
+      ws.send(JSON.stringify({ type: "start" }));
+    } else if (gs === "won" || gs === "lost") {
+      ws.send(JSON.stringify({ type: "restart" }));
+    }
+  }
+
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
+
     if (data.type === "state-update") {
       lastState = data.state;
       renderGame(data.state);
-      }
-    if (data.type === "chat") console.log(`[${data.player}] ${data.message}`);
-  };
-
-  function renderGame(state) {
-    const container = document.getElementById("game-container");
-    const [width, height] = state.maze.size;
-
-    container.style.setProperty("--width", width);
-    container.style.setProperty("--height", height);
-    container.innerHTML = "";
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const cell = document.createElement("div");
-        cell.className = "cell";
-
-        const isWall = state.maze.walls.some((w) => w[0] === x && w[1] === y);
-        cell.classList.add(isWall ? "wall" : "empty");
-
-        const exit = state.maze.exit; // ожидаем [x,y]
-        if (exit && exit[0] === x && exit[1] === y) cell.classList.add("exit");
-
-        container.appendChild(cell);
-      }
     }
 
-    // players
-    Object.entries(state.players || {}).forEach(([id, player]) => {
-  if (!player) return; 
+    if (data.type === "chat") {
+      console.log(`[${data.player}] ${data.message}`);
+    }
+  };
 
-  const status = (player.status === ":alive") ? "alive" : player.status;
+  function updateStartButton(state) {
     const btn = document.getElementById("start-btn");
     const gs = normalizeStatus(state["game-status"]);
 
@@ -89,27 +133,59 @@ function startGame() {
     } else {
       btn.style.display = "none";
     }
-  if (status === "alive") {
-    const idx = player.y * width + player.x;
-    const cell = container.children[idx];
-    if (cell) {
+  }
+
+  function isAlive(player) {
+    if (!player) return false;
+    const st = typeof player.status === "string" ? player.status : "";
+    const norm = st.startsWith(":") ? st.slice(1) : st;
+    return norm === "alive";
+  }
+
+  function renderGame(state) {
+    const container = document.getElementById("game-container");
+    const [width, height] = state.maze.size;
+
+    container.style.setProperty("--width", width);
+    container.style.setProperty("--height", height);
+    container.innerHTML = "";
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+
+        const isWall = (state.maze.walls || []).some(w => w[0] === x && w[1] === y);
+        cell.classList.add(isWall ? "wall" : "empty");
+
+        const exit = state.maze.exit;
+        if (exit && exit[0] === x && exit[1] === y) cell.classList.add("exit");
+
+        container.appendChild(cell);
+      }
+    }
+    Object.values(state.players || {}).forEach((player) => {
+      if (!isAlive(player)) return;
+      const idx = player.y * width + player.x;
+      const cell = container.children[idx];
+      if (!cell) return;
       cell.classList.add("player");
       cell.style.setProperty("--color", player.color || "#f0f");
-    }
-  }
-});
+    });
 
-    // bot
     const bot = state.bot;
-    const botIdx = bot.y * width + bot.x;
-    if (container.children[botIdx]) container.children[botIdx].classList.add("bot");
-
-    const alive = Object.values(state.players || {})
-      .filter(p => p && (p.status === "alive" || p.status === ":alive"))
-      .length;
-    document.getElementById("status").textContent =
-       Game: ${state["game-status"]} | Players: ${alive};
+    if (bot && Number.isFinite(bot.x) && Number.isFinite(bot.y)) {
+      const botIdx = bot.y * width + bot.x;
+      const botCell = container.children[botIdx];
+      if (botCell) botCell.classList.add("bot");
     }
+
+    const aliveCount = Object.values(state.players || {}).filter(isAlive).length;
+    document.getElementById("status").textContent =
+      `Game: ${normalizeStatus(state["game-status"])} | Players: ${aliveCount}`;
+
+    updateStartButton(state);
+  }
 
   document.addEventListener("keydown", (e) => {
     const direction = ({
@@ -126,12 +202,4 @@ function startGame() {
 
     ws.send(JSON.stringify({ type: "move", direction }));
   });
-
-  function sendMessage() {
-    const msgEl = document.getElementById("message");
-    const msg = msgEl.value.trim();
-    if (!msg) return;
-    ws.send(JSON.stringify({ type: "chat", message: msg }));
-    msgEl.value = "";
-  }
 </script>
