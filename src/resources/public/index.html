@@ -1,0 +1,73 @@
+<script>
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.type === "state-update") renderGame(data.state);
+    if (data.type === "chat") console.log(`[${data.player}] ${data.message}`);
+  };
+
+  function renderGame(state) {
+    const container = document.getElementById("game-container");
+    const [width, height] = state.maze.size;
+
+    container.style.setProperty("--width", width);
+    container.style.setProperty("--height", height);
+    container.innerHTML = "";
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+
+        const isWall = state.maze.walls.some((w) => w[0] === x && w[1] === y);
+        cell.classList.add(isWall ? "wall" : "empty");
+
+        const exit = state.maze.exit; // ожидаем [x,y]
+        if (exit && exit[0] === x && exit[1] === y) cell.classList.add("exit");
+
+        container.appendChild(cell);
+      }
+    }
+
+    // players
+    Object.entries(state.players).forEach(([id, player]) => {
+      if (player.status === "alive") {
+        const idx = player.y * width + player.x;
+        const cell = container.children[idx];
+        if (cell) {
+          cell.classList.add("player");
+          cell.style.setProperty("--color", player.color || "#f0f");
+        }
+      }
+    });
+
+    // bot
+    const bot = state.bot;
+    const botIdx = bot.y * width + bot.x;
+    if (container.children[botIdx]) container.children[botIdx].classList.add("bot");
+
+    const alive = Object.values(state.players).filter((p) => p.status === "alive").length;
+    document.getElementById("status").textContent =
+      `Game: ${state["game-status"]} | Players: ${alive}`;
+  }
+
+  document.addEventListener("keydown", (e) => {
+    const direction = ({
+      ArrowUp: "up",
+      ArrowDown: "down",
+      ArrowLeft: "left",
+      ArrowRight: "right",
+    })[e.key];
+
+    if (direction) ws.send(JSON.stringify({ type: "move", direction }));
+  });
+
+  function sendMessage() {
+    const msgEl = document.getElementById("message");
+    const msg = msgEl.value.trim();
+    if (!msg) return;
+    ws.send(JSON.stringify({ type: "chat", message: msg }));
+    msgEl.value = "";
+  }
+</script>
