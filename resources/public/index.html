@@ -1,8 +1,7 @@
 <div id="game-container"></div>
 <div id="status"></div>
+<button id="start-btn" onclick="startGame()" style="display:none;"></button>
 
-<input id="message" placeholder="Chat..." />
-<button onclick="sendMessage()">Send</button>
 <style>
   #game-container {
     display: grid;
@@ -20,9 +19,30 @@
 <script>
   const ws = new WebSocket(`ws://${location.host}/ws`);
 
+  let lastState = null;
+
+function normalizeStatus(s) {
+  // сервер может прислать "playing" или ":playing" и т.п.
+  if (typeof s !== "string") return "";
+  return s.startsWith(":") ? s.slice(1) : s;
+}
+
+function startGame() {
+  if (!lastState) return;
+
+  const gs = normalizeStatus(lastState["game-status"]);
+  if (gs === "waiting") {
+    ws.send(JSON.stringify({ type: "start" }));
+  } else if (gs === "won" || gs === "lost") {
+    ws.send(JSON.stringify({ type: "restart" }));
+  }
+}
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    if (data.type === "state-update") renderGame(data.state);
+    if (data.type === "state-update") {
+      lastState = data.state;
+      renderGame(data.state);
+      }
     if (data.type === "chat") console.log(`[${data.player}] ${data.message}`);
   };
 
@@ -54,7 +74,21 @@
   if (!player) return; 
 
   const status = (player.status === ":alive") ? "alive" : player.status;
+    const btn = document.getElementById("start-btn");
+    const gs = normalizeStatus(state["game-status"]);
 
+    if (gs === "waiting") {
+      btn.style.display = "inline-block";
+      btn.textContent = "Start game";
+    } else if (gs === "won") {
+      btn.style.display = "inline-block";
+      btn.textContent = "Play again";
+    } else if (gs === "lost") {
+      btn.style.display = "inline-block";
+      btn.textContent = "Restart";
+    } else {
+      btn.style.display = "none";
+    }
   if (status === "alive") {
     const idx = player.y * width + player.x;
     const cell = container.children[idx];
@@ -74,7 +108,7 @@
       .filter(p => p && (p.status === "alive" || p.status === ":alive"))
       .length;
     document.getElementById("status").textContent =
-       `Game: ${state["game-status"]} | Players: ${alive}`;
+       Game: ${state["game-status"]} | Players: ${alive};
     }
 
   document.addEventListener("keydown", (e) => {
@@ -85,7 +119,12 @@
       ArrowRight: "right",
     })[e.key];
 
-    if (direction) ws.send(JSON.stringify({ type: "move", direction }));
+    if (!direction) return;
+
+    const gs = normalizeStatus(lastState?.["game-status"]);
+    if (gs !== "playing") return;
+
+    ws.send(JSON.stringify({ type: "move", direction }));
   });
 
   function sendMessage() {
