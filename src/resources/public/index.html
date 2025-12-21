@@ -3,6 +3,20 @@
 
 <input id="message" placeholder="Chat..." />
 <button onclick="sendMessage()">Send</button>
+<style>
+  #game-container {
+    display: grid;
+    grid-template-columns: repeat(var(--width), 20px);
+    grid-template-rows: repeat(var(--height), 20px);
+    gap: 1px;
+  }
+  .cell { width: 20px; height: 20px; border: 1px solid #ccc; }
+  .wall { background: #333; }
+  .empty { background: #fff; }
+  .player { background: var(--color); border-radius: 50%; }
+  .bot { background: #000; }
+  .exit { background: gold; }
+</style>
 <script>
   const ws = new WebSocket(`ws://${location.host}/ws`);
 
