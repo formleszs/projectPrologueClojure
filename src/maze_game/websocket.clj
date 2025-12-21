@@ -12,15 +12,16 @@
   (doseq [client (vals @clients)]
     (server/send! client (json/write-str message))))
 
+(defn current-state []
+  (update-in @game-state/game-state [:maze :walls] vec))
+
 (defn game-loop []
   (async/go-loop []
     (async/<! (async/timeout 1000))
     (try
-      ;; тик
       (game-state/game-tick)
 
-      (let [state @game-state/game-state
-            state (update-in state [:maze :walls] vec)]
+      (let [state (current-state)]
         (println "tick" (:tick state) "clients" (count @clients) "players" (count (:players state)))
         (broadcast {:type "state-update" :state state}))
 
@@ -28,7 +29,6 @@
         (println "GAME LOOP ERROR:" (.getMessage t))
         (.printStackTrace t)))
     (recur)))
-
 
 (defn index-page []
   (slurp (io/resource "public/index.html")))
@@ -41,10 +41,12 @@
     (server/with-channel req channel
       (let [player-id (str (UUID/randomUUID))]
         (swap! clients assoc player-id channel)
+
         (game-state/add-player player-id)
+
         (server/send! channel
                       (json/write-str {:type "state-update"
-                                       :state (update-in @game-state/game-state [:maze :walls] vec)}))
+                                       :state (current-state)}))
 
         (server/on-close channel
           (fn [_status]
@@ -55,10 +57,26 @@
           (fn [data]
             (let [msg (json/read-str data :key-fn keyword)]
               (case (:type msg)
-                "move" (game-state/move-player player-id (:direction msg))
-                "chat" (broadcast {:type "chat"
-                                   :player player-id
-                                   :message (:message msg)})
+                "move"
+                (do
+                  (game-state/move-player player-id (:direction msg))
+                  (broadcast {:type "state-update" :state (current-state)}))
+
+                "start"
+                (do
+                  (game-state/start-game!)
+                  (broadcast {:type "state-update" :state (current-state)}))
+
+                "restart"
+                (do
+                  (game-state/restart-game!)
+                  (broadcast {:type "state-update" :state (current-state)}))
+
+                "chat"
+                (broadcast {:type "chat"
+                            :player player-id
+                            :message (:message msg)})
+
                 nil))))))))
 
 (defn app [req]
