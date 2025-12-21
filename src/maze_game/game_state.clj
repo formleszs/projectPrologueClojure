@@ -5,7 +5,7 @@
   )
 
 (def game-state (atom {
-  :players {}      ; {player-id {:x, :y, :status, :color}}
+  :players {}
   :bot {:x 0 :y 0 :target nil}
   :maze {:walls #{}
          :exit {:x 1 :y 1}
@@ -56,29 +56,41 @@
           :status :alive
           :color (rand-nth ["#FF0000" "#00FF00" "#0000FF" "#FFFF00"])}))
 
-(defn move-player [player-id direction]
+(defn in-bounds? [x y]
+  (let [[w h] (get-in @game-state [:maze :size])]
+    (and (<= 0 x) (< x w) (<= 0 y) (< y h))))
 
-  (let [player (get-in @game-state [:players player-id])
-        [dx dy] (case direction
-                  "up" [0 -1]
-                  "down" [0 1]
-                  "left" [-1 0]
-                  "right" [1 0]
-                  [0 0])
-        new-x (+ (:x player) dx)
-        new-y (+ (:y player) dy)
-        walls (:walls (:maze @game-state))]
-     ;; ЛОГ (НОВОЕ): player уже существует, так что всё ок
-        (println "MOVE" player-id direction
-                 "from" [(:x player) (:y player)]
-                  "to" [new-x new-y]
-                  "wall?" (contains? walls [new-x new-y]))
-    (when (and (not (contains? walls [new-x new-y]))
-               (>= new-x 0) (>= new-y 0)
-               (< new-x (first (:size (:maze @game-state))))
-               (< new-y (second (:size (:maze @game-state)))))
-      (swap! game-state assoc-in [:players player-id :x] new-x)
-      (swap! game-state assoc-in [:players player-id :y] new-y))))
+(defn wall? [x y]
+  (contains? (get-in @game-state [:maze :walls]) [x y]))
+
+(defn passable? [x y]
+  (and (in-bounds? x y)
+       (not (wall? x y))))
+
+(defn move-player [player-id direction]
+  (let [player (get-in @game-state [:players player-id])]
+    (when player
+      (let [[dx dy] (case direction
+                      "up"    [0 -1]
+                      "down"  [0  1]
+                      "left"  [-1 0]
+                      "right" [1  0]
+                      [0 0])
+            new-x (+ (:x player) dx)
+            new-y (+ (:y player) dy)
+            walls (get-in @game-state [:maze :walls])
+            [w h] (get-in @game-state [:maze :size])
+            passable? (fn [x y]
+                        (and (<= 0 x) (< x w)
+                             (<= 0 y) (< y h)
+                             (not (contains? walls [x y]))))]
+        (when (passable? new-x new-y)
+          (swap! game-state
+                 (fn [s]
+                   (-> s
+                       (assoc-in [:players player-id :x] new-x)
+                       (assoc-in [:players player-id :y] new-y)))))))))
+
 
 (defn parse-path [s]
   (mapv (fn [[_ xs ys]]
@@ -88,33 +100,50 @@
 (defn update-bot []
   (let [bot (:bot @game-state)
         players (:players @game-state)
-        alive-players (filter (fn [[_ p]] (and p (= :alive (:status p)))) players)]
+        alive-players (filter (fn [[_ p]] (and p (= :alive (:status p))))
+                              (seq players))]
     (when (seq alive-players)
       (let [[player-id player] (first alive-players)
+            walls (get-in @game-state [:maze :walls])
+            [w h] (get-in @game-state [:maze :size])
+            passable? (fn [x y]
+                        (and (<= 0 x) (< x w)
+                             (<= 0 y) (< y h)
+                             (not (contains? walls [x y]))))
 
-            ;; НОВОЕ: query как отдельный биндинг, без лишних скобок
             query (format "((find_path(%d,%d,%d,%d,Path), writeln(Path)) ; writeln([]))."
                           (int (:x bot)) (int (:y bot))
                           (int (:x player)) (int (:y player)))
 
             path-str (call-prolog query)
 
-            ;; парсим (X,Y) из stdout
             coords (map (fn [[_ xs ys]]
                           [(Integer/parseInt xs) (Integer/parseInt ys)])
-                        (re-seq #"\((\d+),\s*(\d+)\)" (or path-str "")))
+                        (re-seq #"\((-?\d+),\s*(-?\d+)\)" (or path-str "")))
 
             next-pos (second coords)]
         (when (and next-pos (= 2 (count next-pos)))
-          (let [[x y] next-pos]
-            (swap! game-state assoc :bot {:x x :y y :target player-id})
-
-            (doseq [[pid p] (:players @game-state)]
-              (when (and p
-                         (= (:x p) x)
-                         (= (:y p) y)
-                         (= (:status p) :alive))
-                (swap! game-state assoc-in [:players pid :status] :dead)))))))))
+          (let [old-x (:x bot)
+                old-y (:y bot)
+                [x y] next-pos
+                step (+ (Math/abs (long (- x old-x)))
+                        (Math/abs (long (- y old-y))))]
+            (when (and (= step 1) (passable? x y))
+              (swap! game-state
+                     (fn [s]
+                       (let [moved? (or (not= old-x x) (not= old-y y))
+                             s (assoc s :bot {:x x :y y :target player-id})]
+                         (if moved?
+                           (reduce (fn [st [pid p]]
+                                     (if (and p
+                                              (= :alive (:status p))
+                                              (= x (:x p))
+                                              (= y (:y p)))
+                                       (assoc-in st [:players pid :status] :dead)
+                                       st))
+                                   s
+                                   (seq (:players s)))
+                           s)))))))))))
 
 (defn game-tick []
   (when (= :playing (:game-status @game-state))
