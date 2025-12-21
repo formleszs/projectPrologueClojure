@@ -7,12 +7,18 @@
 (defonce server-stop (atom nil))
 (defonce loop-started? (atom false))
 
-(defn start-server []
+(defn start-server! []
+  (when-let [stop-fn @server-stop]
+    (stop-fn)
+    (reset! server-stop nil))
+
   (println "Starting maze game server on port 8080...")
   (reset! server-stop (server/run-server ws/app {:port 8080})))
 
 (defn -main [& _args]
   (game-state/initialize-game)
+
   (when (compare-and-set! loop-started? false true)
     (ws/game-loop))
-  (start-server))
+
+  (start-server!))
