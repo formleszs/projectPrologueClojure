@@ -36,25 +36,31 @@
     }
 
     // players
-    Object.entries(state.players).forEach(([id, player]) => {
-      if (player.status === "alive") {
-        const idx = player.y * width + player.x;
-        const cell = container.children[idx];
-        if (cell) {
-          cell.classList.add("player");
-          cell.style.setProperty("--color", player.color || "#f0f");
-        }
-      }
-    });
+    Object.entries(state.players || {}).forEach(([id, player]) => {
+  if (!player) return; 
+
+  const status = (player.status === ":alive") ? "alive" : player.status;
+
+  if (status === "alive") {
+    const idx = player.y * width + player.x;
+    const cell = container.children[idx];
+    if (cell) {
+      cell.classList.add("player");
+      cell.style.setProperty("--color", player.color || "#f0f");
+    }
+  }
+});
 
     // bot
     const bot = state.bot;
     const botIdx = bot.y * width + bot.x;
     if (container.children[botIdx]) container.children[botIdx].classList.add("bot");
 
-  const alive = Object.values(state.players).filter(p => p.status === "alive").length;
-  document.getElementById("status").textContent =
-  'Game: ${state["game-status"]} | Players: ${alive}';
+  const alive = Object.values(state.players || {})
+ .filter(p => p && (p.status === "alive" || p.status === ":alive"))
+ .length;
+document.getElementById("status").textContent =
+ Game: ${state["game-status"]} | Players: ${alive};
   }
 
   document.addEventListener("keydown", (e) => {
