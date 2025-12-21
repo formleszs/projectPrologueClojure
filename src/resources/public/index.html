@@ -47,9 +47,9 @@
     const botIdx = bot.y * width + bot.x;
     if (container.children[botIdx]) container.children[botIdx].classList.add("bot");
 
-    const alive = Object.values(state.players).filter((p) => p.status === "alive").length;
-    document.getElementById("status").textContent =
-      `Game: ${state["game-status"]} | Players: ${alive}`;
+    const alive = Object.values(state.players).filter(p => p.status === "alive").length;
+document.getElementById("status").textContent =
+  Game: ${state["game-status"]} | Players: ${alive};
   }
 
   document.addEventListener("keydown", (e) => {
