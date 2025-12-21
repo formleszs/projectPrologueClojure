@@ -16,14 +16,23 @@
 
 (def prolog-process (atom nil))
 
-(defn call-prolog [query]
-  (let [result (shell/sh "swipl" "-q"
-                         "-f" "src/prolog/maze_logic.pl"
-                         "-f" "src/prolog/pathfinding.pl"
-                         "-g" query "-t" "halt")]
-    (if (= 0 (:exit result))
+(defn call-prolog [goal]
+  (let [result (shell/sh "swipl"
+                         "-q"
+                         "-s" "src/prolog/maze_logic.pl"
+                         "-s" "src/prolog/pathfinding.pl"
+                         "-g" goal
+                         "-t" "halt")]
+    (when (seq (:err result))
+      (println "PROLOG STDERR:" (:err result)))
+    (if (zero? (:exit result))
       (:out result)
-      (throw (Exception. (str "Prolog error: " (:err result)))))))
+      (throw (Exception.
+              (str "Prolog failed (exit=" (:exit result) ")\n"
+                   "STDERR:\n" (:err result) "\n"
+                   "STDOUT:\n" (:out result)))))))
+
+
 
 (defn initialize-game []
   (reset! game-state
@@ -42,11 +51,14 @@
      :tick 0}))
 
 (defn add-player [player-id]
-  (swap! game-state update-in [:players player-id]{
-    :x 0 :y 2
-    :status :alive
-    :color (rand-nth ["#FF0000" "#00FF00" "#0000FF" "#FFFF00"])
-  }))
+  (swap! game-state
+         (fn [s]
+           (-> s
+               (assoc-in [:players player-id]
+                         {:x 0 :y 6
+                          :status :alive
+                          :color (rand-nth ["#FF0000" "#00FF00" "#0000FF" "#FFFF00"])})
+               (assoc :game-status :playing)))))
 
 (defn move-player [player-id direction]
   (let [player (get-in @game-state [:players player-id])
@@ -74,40 +86,50 @@
 (defn update-bot []
   (let [bot (:bot @game-state)
         players (:players @game-state)
-        alive-players (filter (fn [[_ p]] (= :alive (:status p))) players)]
+        alive-players (filter (fn [[_ p]] (and p (= :alive (:status p)))) players)]
     (when (seq alive-players)
       (let [[player-id player] (first alive-players)
-            query (format "find_path(%d,%d,%d,%d,Path), writeln(Path)."
-                          (:x bot) (:y bot) (:x player) (:y player))
+
+            ;; НОВОЕ: query как отдельный биндинг, без лишних скобок
+            query (format "((find_path(%d,%d,%d,%d,Path), writeln(Path)) ; writeln([]))."
+                          (int (:x bot)) (int (:y bot))
+                          (int (:x player)) (int (:y player)))
+
             path-str (call-prolog query)
-            path (parse-path path-str)
-            next-pos (second path)]
-        (when next-pos
+
+            ;; парсим (X,Y) из stdout
+            coords (map (fn [[_ xs ys]]
+                          [(Integer/parseInt xs) (Integer/parseInt ys)])
+                        (re-seq #"\((\d+),\s*(\d+)\)" (or path-str "")))
+
+            next-pos (second coords)]
+        (when (and next-pos (= 2 (count next-pos)))
           (let [[x y] next-pos]
             (swap! game-state assoc :bot {:x x :y y :target player-id})
 
             (doseq [[pid p] (:players @game-state)]
-              (when (and (= (:x p) x)
+              (when (and p
+                         (= (:x p) x)
                          (= (:y p) y)
                          (= (:status p) :alive))
                 (swap! game-state assoc-in [:players pid :status] :dead)))))))))
-
 
 (defn game-tick []
   (when (= :playing (:game-status @game-state))
     (swap! game-state update :tick inc)
     (update-bot)
 
-    (let [players (:players @game-state)
-          alive-count (count (filter #(= :alive (:status (val %))) players))
-          exit (:exit (:maze @game-state))
-          at-exit-count (count (filter #(and (= (:x (val %)) (first exit))
-                                            (= (:y (val %)) (second exit))
-                                            (= :alive (:status (val %))))
-                                      players))]
-      (cond
-        (zero? alive-count)
-        (swap! game-state assoc :game-status :lost)
+    (let [players (:players @game-state)]
+      (when (pos? (count players))
+        (let [alive-count (count (filter #(= :alive (:status (val %))) players))
+              exit (get-in @game-state [:maze :exit])
+              at-exit-count (count (filter #(and (= (:x (val %)) (first exit))
+                                                (= (:y (val %)) (second exit))
+                                                (= :alive (:status (val %))))
+                                          players))]
+          (cond
+            (zero? alive-count)
+            (swap! game-state assoc :game-status :lost)
 
-        (= alive-count at-exit-count)
-        (swap! game-state assoc :game-status :won)))))
+            (= alive-count at-exit-count)
+            (swap! game-state assoc :game-status :won)))))))

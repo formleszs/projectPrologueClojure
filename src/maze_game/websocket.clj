@@ -15,10 +15,20 @@
 (defn game-loop []
   (async/go-loop []
     (async/<! (async/timeout 1000))
-    (game-state/game-tick)
-    (broadcast {:type "state-update"
-                :state @game-state/game-state})
+    (try
+      ;; тик
+      (game-state/game-tick)
+
+      (let [state @game-state/game-state
+            state (update-in state [:maze :walls] vec)]
+        (println "tick" (:tick state) "clients" (count @clients) "players" (count (:players state)))
+        (broadcast {:type "state-update" :state state}))
+
+      (catch Throwable t
+        (println "GAME LOOP ERROR:" (.getMessage t))
+        (.printStackTrace t)))
     (recur)))
+
 
 (defn index-page []
   (slurp (io/resource "public/index.html")))
@@ -32,6 +42,9 @@
       (let [player-id (str (UUID/randomUUID))]
         (swap! clients assoc player-id channel)
         (game-state/add-player player-id)
+        (server/send! channel
+                      (json/write-str {:type "state-update"
+                                       :state (update-in @game-state/game-state [:maze :walls] vec)}))
 
         (server/on-close channel
           (fn [_status]
