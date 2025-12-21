@@ -21,6 +21,6 @@ wall(0, 4).             wall(2, 4).             wall(4, 4).
 wall(0, 5).             wall(2, 5).             wall(4, 5).
 wall(0, 6). wall(1, 6). wall(2, 6). wall(3, 6). wall(4, 6).
 
-maze_size(5, 6).
+maze_size(5, 7).
 
 exit(1, 0).
