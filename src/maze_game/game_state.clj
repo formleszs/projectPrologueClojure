@@ -36,31 +36,28 @@
 
 (defn initialize-game []
   (reset! game-state
-    {:players {}
-     :bot {:x 0 :y 0 :target nil}
-     :maze {:walls #{[0 0] [2 0] [3 0] [4 0]
-                    [0 1]               [4 1]
-                    [0 2] [1 2] [2 2]   [4 2]
-                    [0 3]               [4 3]
-                    [0 4] [2 4]         [4 4]
-                    [0 5] [2 5]         [4 5]
-                    [0 6] [1 6] [2 6] [3 6] [4 6]}
-           :exit [1 0]
-           :size [5 7]}
-     :game-status :playing
-     :tick 0}))
+          {:players {}
+           :bot {:x 1 :y 5 :target nil}
+           :maze {:walls #{[0 0] [2 0] [3 0] [4 0]
+                           [0 1] [4 1]
+                           [0 2] [1 2] [2 2] [4 2]
+                           [0 3] [4 3]
+                           [0 4] [2 4] [4 4]
+                           [0 5] [2 5] [4 5]
+                           [0 6] [1 6] [2 6] [3 6] [4 6]}
+                  :exit [1 0]
+                  :size [5 7]}
+           :game-status :playing
+           :tick 0}))
 
 (defn add-player [player-id]
-  (swap! game-state
-         (fn [s]
-           (-> s
-               (assoc-in [:players player-id]
-                         {:x 0 :y 6
-                          :status :alive
-                          :color (rand-nth ["#FF0000" "#00FF00" "#0000FF" "#FFFF00"])})
-               (assoc :game-status :playing)))))
+  (swap! game-state assoc-in [:players player-id]
+         {:x 3 :y 5
+          :status :alive
+          :color (rand-nth ["#FF0000" "#00FF00" "#0000FF" "#FFFF00"])}))
 
 (defn move-player [player-id direction]
+
   (let [player (get-in @game-state [:players player-id])
         [dx dy] (case direction
                   "up" [0 -1]
@@ -71,6 +68,11 @@
         new-x (+ (:x player) dx)
         new-y (+ (:y player) dy)
         walls (:walls (:maze @game-state))]
+     ;; ЛОГ (НОВОЕ): player уже существует, так что всё ок
+        (println "MOVE" player-id direction
+                 "from" [(:x player) (:y player)]
+                  "to" [new-x new-y]
+                  "wall?" (contains? walls [new-x new-y]))
     (when (and (not (contains? walls [new-x new-y]))
                (>= new-x 0) (>= new-y 0)
                (< new-x (first (:size (:maze @game-state))))
