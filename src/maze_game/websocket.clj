@@ -13,18 +13,17 @@
     (server/send! client (json/write-str message))))
 
 (defn current-state []
-  (update-in @game-state/game-state [:maze :walls] vec))
+  (let [s (dosync @game-state/game-state)]
+    (update-in s [:maze :walls] vec)))
 
 (defn game-loop []
   (async/go-loop []
     (async/<! (async/timeout 1000))
     (try
       (game-state/game-tick)
-
       (let [state (current-state)]
         (println "tick" (:tick state) "clients" (count @clients) "players" (count (:players state)))
         (broadcast {:type "state-update" :state state}))
-
       (catch Throwable t
         (println "GAME LOOP ERROR:" (.getMessage t))
         (.printStackTrace t)))
@@ -51,7 +50,7 @@
         (server/on-close channel
           (fn [_status]
             (swap! clients dissoc player-id)
-            (swap! game-state/game-state update :players dissoc player-id)))
+            (game-state/remove-player! player-id)))
 
         (server/on-receive channel
           (fn [data]
